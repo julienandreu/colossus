@@ -1,0 +1,9 @@
+name: Simple Log
+
+nodes:
+  - id: HelloWorld
+    type: Log
+    input: Hello World!
+
+output:
+  HelloWorld: ${{ HelloWorld }}
