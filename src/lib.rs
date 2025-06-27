@@ -17,10 +17,12 @@
 //! # Examples
 //!
 //! ```rust
-//! use colossus::core::engine::{WorkflowOptions, execute_workflow};
+//! use colossus::core::engine::{ExecuteWorkflowOptions, WorkflowExecutor};
+//! use colossus::core::heap::Heap;
 //!
-//! let options = WorkflowOptions::new("workflow.yml");
-//! match execute_workflow(options) {
+//! let mut heap = Heap::new();
+//! let options = ExecuteWorkflowOptions::new("workflow.yml");
+//! match WorkflowExecutor::execute(options, &mut heap) {
 //!     Ok(workflow) => println!("Workflow loaded: {:?}", workflow),
 //!     Err(e) => eprintln!("Failed to execute workflow: {}", e),
 //! }

@@ -21,7 +21,7 @@ use serde_yml::Value;
 /// let node = WorkflowNode {
 ///     id: "log-message".to_string(),
 ///     node_type: "log".to_string(),
-///     input: Value::String("Hello, World!".to_string()),
+///     input: Some(Value::String("Hello, World!".to_string())),
 ///     when: Some("debug == true".to_string()),
 /// };
 /// ```
@@ -44,7 +44,7 @@ pub struct WorkflowNode {
     ///
     /// This contains the configuration and data that the node needs
     /// to perform its action.
-    pub input: Value,
+    pub input: Option<Value>,
 
     /// Conditional expression for node execution
     ///
@@ -73,9 +73,9 @@ impl WorkflowNode {
     /// use colossus::shared::types::workflow::node::WorkflowNode;
     /// use serde_yml::Value;
     ///
-    /// let node = WorkflowNode::new("my-node", "log", Value::String("message".to_string()));
+    /// let node = WorkflowNode::new("my-node", "log", Some(Value::String("message".to_string())));
     /// ```
-    pub fn new(id: impl Into<String>, node_type: impl Into<String>, input: Value) -> Self {
+    pub fn new(id: impl Into<String>, node_type: impl Into<String>, input: Option<Value>) -> Self {
         Self {
             id: id.into(),
             node_type: node_type.into(),
@@ -106,14 +106,14 @@ impl WorkflowNode {
     /// let node = WorkflowNode::with_condition(
     ///     "debug-log",
     ///     "log",
-    ///     Value::String("debug message".to_string()),
+    ///     Some(Value::String("debug message".to_string())),
     ///     "debug == true"
     /// );
     /// ```
     pub fn with_condition(
         id: impl Into<String>,
         node_type: impl Into<String>,
-        input: Value,
+        input: Option<Value>,
         when: impl Into<String>,
     ) -> Self {
         Self {
@@ -136,10 +136,10 @@ impl WorkflowNode {
     /// use colossus::shared::types::workflow::node::WorkflowNode;
     /// use serde_yml::Value;
     ///
-    /// let node = WorkflowNode::new("test", "log", Value::Null);
+    /// let node = WorkflowNode::new("test", "log", Some(Value::Null));
     /// assert!(!node.has_condition());
     ///
-    /// let conditional_node = WorkflowNode::with_condition("test", "log", Value::Null, "true");
+    /// let conditional_node = WorkflowNode::with_condition("test", "log", Some(Value::Null), "true");
     /// assert!(conditional_node.has_condition());
     /// ```
     pub fn has_condition(&self) -> bool {

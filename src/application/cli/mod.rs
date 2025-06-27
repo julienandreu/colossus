@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::{debug, error, info, warn};
 
-use crate::core::engine::{WorkflowOptions, execute_workflow};
+use crate::core::engine::{ExecuteWorkflowOptions, WorkflowExecutor};
+use crate::core::heap::Heap;
 use crate::shared::types::workflow::workflow::Workflow;
 
 /// Main CLI configuration structure
@@ -206,7 +207,7 @@ impl CliApp {
         };
 
         tracing_subscriber::fmt()
-            .with_env_filter(format!("colossus={}", level))
+            .with_max_level(level)
             .with_target(false)
             .with_thread_ids(false)
             .with_thread_names(false)
@@ -225,22 +226,28 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error with context on failure.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn handle_execute(file: PathBuf, validate: bool, format: OutputFormat) -> anyhow::Result<()> {
         info!("Executing workflow from file: {:?}", file);
 
-        let options = WorkflowOptions::new(file);
-        let workflow = execute_workflow(options)?;
-
         if validate {
-            info!("Workflow validation successful");
-        } else {
-            info!("Workflow execution completed");
+            Self::handle_validate(file.clone())?;
         }
 
-        Self::output_workflow(&workflow, format)?;
+        let mut heap = Heap::new();
+        let options = ExecuteWorkflowOptions::new(file);
 
-        Ok(())
+        match WorkflowExecutor::execute(options, &mut heap) {
+            Ok(workflow) => {
+                info!("Workflow executed successfully");
+                Self::output_workflow(&workflow, format)?;
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to execute workflow: {}", e);
+                Err(anyhow::anyhow!("Workflow execution failed: {}", e))
+            }
+        }
     }
 
     /// Handle the list command
@@ -252,35 +259,35 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error with context on failure.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn handle_list(directory: PathBuf, detailed: bool) -> anyhow::Result<()> {
         info!("Listing workflows in directory: {:?}", directory);
 
         if !directory.exists() {
-            anyhow::bail!("Directory does not exist: {:?}", directory);
+            return Err(anyhow::anyhow!("Directory does not exist: {:?}", directory));
         }
 
         if !directory.is_dir() {
-            anyhow::bail!("Path is not a directory: {:?}", directory);
+            return Err(anyhow::anyhow!("Path is not a directory: {:?}", directory));
         }
 
         let workflows = Self::discover_workflows(&directory)?;
 
         if workflows.is_empty() {
-            warn!("No workflow files found in directory: {:?}", directory);
+            println!("No workflow files found in {:?}", directory);
             return Ok(());
         }
 
-        println!("Found {} workflow(s):", workflows.len());
+        println!("Found {} workflow(s) in {:?}:", workflows.len(), directory);
 
         for workflow_path in workflows {
             if detailed {
                 match Self::get_workflow_info(&workflow_path) {
-                    Ok(info) => println!("  {}", info),
-                    Err(e) => println!("  {:?} (error: {})", workflow_path, e),
+                    Ok(info) => println!("{}", info),
+                    Err(e) => warn!("Failed to get info for {:?}: {}", workflow_path, e),
                 }
             } else {
-                println!("  {:?}", workflow_path);
+                println!("  {}", workflow_path.file_name().unwrap().to_string_lossy());
             }
         }
 
@@ -295,25 +302,32 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error with context on failure.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn handle_validate(file: PathBuf) -> anyhow::Result<()> {
         info!("Validating workflow file: {:?}", file);
 
-        let options = WorkflowOptions::new(file);
-        let workflow = execute_workflow(options)?;
+        if !file.exists() {
+            return Err(anyhow::anyhow!("Workflow file does not exist: {:?}", file));
+        }
 
-        println!("✅ Workflow validation successful!");
-        println!("Name: {}", workflow.name.as_deref().unwrap_or("Unnamed"));
-        println!(
-            "Version: {}",
-            workflow.version.as_deref().unwrap_or("Unknown")
-        );
-        println!(
-            "Nodes: {}",
-            workflow.nodes.as_ref().map(|n| n.len()).unwrap_or(0)
-        );
+        // Try to parse the workflow to validate it
+        let mut heap = Heap::new();
+        let options = ExecuteWorkflowOptions::new(file);
 
-        Ok(())
+        match WorkflowExecutor::execute(options, &mut heap) {
+            Ok(workflow) => {
+                info!("Workflow validation successful");
+                println!("✓ Workflow is valid");
+                println!("  Name: {}", workflow.name_or("Unnamed"));
+                println!("  Version: {}", workflow.version_or("Unknown"));
+                println!("  Nodes: {}", workflow.node_count());
+                Ok(())
+            }
+            Err(e) => {
+                error!("Workflow validation failed: {}", e);
+                Err(anyhow::anyhow!("Workflow validation failed: {}", e))
+            }
+        }
     }
 
     /// Handle the info command
@@ -324,28 +338,39 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error with context on failure.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn handle_info(file: PathBuf) -> anyhow::Result<()> {
-        info!("Getting workflow information: {:?}", file);
+        info!("Getting workflow info for file: {:?}", file);
 
-        let options = WorkflowOptions::new(file);
-        let workflow = execute_workflow(options)?;
+        if !file.exists() {
+            return Err(anyhow::anyhow!("Workflow file does not exist: {:?}", file));
+        }
 
-        Self::output_workflow(&workflow, OutputFormat::Text)?;
+        let mut heap = Heap::new();
+        let options = ExecuteWorkflowOptions::new(file);
 
-        Ok(())
+        match WorkflowExecutor::execute(options, &mut heap) {
+            Ok(workflow) => {
+                Self::output_workflow(&workflow, OutputFormat::Text)?;
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to get workflow info: {}", e);
+                Err(anyhow::anyhow!("Failed to get workflow info: {}", e))
+            }
+        }
     }
 
     /// Output workflow information in the specified format
     ///
     /// # Arguments
     ///
-    /// * `workflow` - The workflow to display
-    /// * `format` - The output format to use
+    /// * `workflow` - The workflow to output
+    /// * `format` - The output format
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error if serialization fails.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn output_workflow(workflow: &Workflow, format: OutputFormat) -> anyhow::Result<()> {
         match format {
             OutputFormat::Text => Self::output_text(workflow),
@@ -358,33 +383,45 @@ impl CliApp {
     ///
     /// # Arguments
     ///
-    /// * `workflow` - The workflow to display
+    /// * `workflow` - The workflow to output
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success, or an error on failure.
     fn output_text(workflow: &Workflow) -> anyhow::Result<()> {
-        println!("Workflow Information:");
-        println!("  Name: {}", workflow.name.as_deref().unwrap_or("Unnamed"));
-        println!(
-            "  Version: {}",
-            workflow.version.as_deref().unwrap_or("Unknown")
-        );
-        println!("  ID: {}", workflow.id.as_deref().unwrap_or("None"));
-
-        if let Some(variables) = &workflow.variables {
-            println!("  Variables: {}", variables.len());
-        }
+        println!("Workflow Information");
+        println!("===================");
+        println!("Name: {}", workflow.name_or("Unnamed"));
+        println!("ID: {}", workflow.id.as_deref().unwrap_or("Not specified"));
+        println!("Version: {}", workflow.version_or("Unknown"));
+        println!("Nodes: {}", workflow.node_count());
 
         if let Some(inputs) = &workflow.inputs {
-            println!("  Inputs: {}", inputs.len());
+            println!("Inputs: {}", inputs.len());
+            for input in inputs {
+                println!("  - {}", input.name);
+            }
+        } else {
+            println!("Inputs: None");
+        }
+
+        if let Some(variables) = &workflow.variables {
+            println!("Variables: {}", variables.len());
+            for variable in variables {
+                println!("  - {}", variable.name);
+            }
+        } else {
+            println!("Variables: None");
         }
 
         if let Some(nodes) = &workflow.nodes {
-            println!("  Nodes: {}", nodes.len());
+            println!("Node Details:");
             for node in nodes {
-                println!("    - {} ({})", node.id, node.node_type);
+                println!("  - {} (type: {})", node.id, node.node_type);
+                if let Some(when) = &node.when {
+                    println!("    Condition: {}", when);
+                }
             }
-        }
-
-        if let Some(output) = &workflow.output {
-            println!("  Output: {:?}", output);
         }
 
         Ok(())
@@ -394,14 +431,13 @@ impl CliApp {
     ///
     /// # Arguments
     ///
-    /// * `workflow` - The workflow to serialize
+    /// * `workflow` - The workflow to output
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error if serialization fails.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn output_json(workflow: &Workflow) -> anyhow::Result<()> {
-        let json = serde_json::to_string_pretty(workflow)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize workflow to JSON: {}", e))?;
+        let json = serde_json::to_string_pretty(workflow)?;
         println!("{}", json);
         Ok(())
     }
@@ -410,14 +446,13 @@ impl CliApp {
     ///
     /// # Arguments
     ///
-    /// * `workflow` - The workflow to serialize
+    /// * `workflow` - The workflow to output
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` on success, or an error if serialization fails.
+    /// Returns `Ok(())` on success, or an error on failure.
     fn output_yaml(workflow: &Workflow) -> anyhow::Result<()> {
-        let yaml = serde_yml::to_string(workflow)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize workflow to YAML: {}", e))?;
+        let yaml = serde_yml::to_string(workflow)?;
         println!("{}", yaml);
         Ok(())
     }
@@ -426,28 +461,24 @@ impl CliApp {
     ///
     /// # Arguments
     ///
-    /// * `directory` - Directory to search for workflow files
+    /// * `directory` - Directory to search
     ///
     /// # Returns
     ///
-    /// Returns a vector of paths to workflow files, or an error if the directory
-    /// cannot be read.
+    /// Returns a vector of workflow file paths, or an error on failure.
     fn discover_workflows(directory: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
-        let entries = std::fs::read_dir(directory)
-            .map_err(|e| anyhow::anyhow!("Failed to read directory: {}", e))?;
-
         let mut workflows = Vec::new();
 
-        for entry in entries {
-            let entry =
-                entry.map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", e))?;
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
             let path = entry.path();
 
-            if Self::is_workflow_file(&path) {
+            if path.is_file() && Self::is_workflow_file(&path) {
                 workflows.push(path);
             }
         }
 
+        workflows.sort();
         Ok(workflows)
     }
 
@@ -459,15 +490,15 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns `true` if the file has a workflow extension (.yml, .yaml, .json).
+    /// Returns `true` if the file is a workflow file, `false` otherwise.
     fn is_workflow_file(path: &PathBuf) -> bool {
         path.extension()
-            .and_then(|s| s.to_str())
+            .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext.to_lowercase().as_str(), "yml" | "yaml" | "json"))
             .unwrap_or(false)
     }
 
-    /// Get formatted workflow information
+    /// Get workflow information as a string
     ///
     /// # Arguments
     ///
@@ -475,16 +506,18 @@ impl CliApp {
     ///
     /// # Returns
     ///
-    /// Returns a formatted string with workflow information, or an error if
-    /// the workflow cannot be loaded.
+    /// Returns workflow information as a string, or an error on failure.
     fn get_workflow_info(path: &PathBuf) -> anyhow::Result<String> {
-        let options = WorkflowOptions::new(path);
-        let workflow = execute_workflow(options)?;
+        let mut heap = Heap::new();
+        let options = ExecuteWorkflowOptions::new(path);
 
-        let name = workflow.name.as_deref().unwrap_or("Unnamed");
-        let version = workflow.version.as_deref().unwrap_or("Unknown");
-        let node_count = workflow.nodes.as_ref().map(|n| n.len()).unwrap_or(0);
+        let workflow = WorkflowExecutor::execute(options, &mut heap)?;
 
-        Ok(format!("{} (v{}, {} nodes)", name, version, node_count))
+        Ok(format!(
+            "  {} ({} nodes) - {}",
+            workflow.name_or("Unnamed"),
+            workflow.node_count(),
+            path.file_name().unwrap().to_string_lossy()
+        ))
     }
 }

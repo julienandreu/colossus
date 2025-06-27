@@ -1,9 +1,19 @@
 name: Simple Log
 
 nodes:
+  - id: Hello
+    type: Log
+    input: Hello
+
+  - id: World
+    type: Log
+    input: World
+
   - id: HelloWorld
     type: Log
-    input: Hello World!
+    input: ${{ Hello }} ${{ World }}!
 
 output:
+  Hello: ${{ Hello }}
+  World: ${{ World }}
   HelloWorld: ${{ HelloWorld }}

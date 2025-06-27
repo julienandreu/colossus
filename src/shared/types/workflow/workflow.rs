@@ -200,16 +200,19 @@ impl Workflow {
     /// use colossus::shared::types::workflow::workflow::Workflow;
     ///
     /// let workflow = Workflow::new("My Workflow").with_version("1.0.0");
-    /// assert_eq!(workflow.version_or("Unknown"), "1.0.0");
+    /// assert_eq!(workflow.version_or("0.1.0"), "1.0.0");
     ///
-    /// let workflow = Workflow::new("My Workflow");
-    /// assert_eq!(workflow.version_or("Unknown"), "Unknown");
+    /// let workflow = Workflow {
+    ///     version: None,
+    ///     ..Default::default()
+    /// };
+    /// assert_eq!(workflow.version_or("0.1.0"), "0.1.0");
     /// ```
     pub fn version_or(&self, default: &str) -> String {
         self.version.as_deref().unwrap_or(default).to_string()
     }
 
-    /// Gets the number of nodes in the workflow
+    /// Returns the number of nodes in the workflow
     ///
     /// # Returns
     ///
@@ -220,14 +223,14 @@ impl Workflow {
     /// ```rust
     /// use colossus::shared::types::workflow::workflow::Workflow;
     ///
-    /// let workflow = Workflow::new("My Workflow");
+    /// let workflow = Workflow::new("Empty Workflow");
     /// assert_eq!(workflow.node_count(), 0);
     /// ```
     pub fn node_count(&self) -> usize {
-        self.nodes.as_ref().map(|nodes| nodes.len()).unwrap_or(0)
+        self.nodes.as_ref().map_or(0, |nodes| nodes.len())
     }
 
-    /// Checks if the workflow has any nodes defined
+    /// Checks if the workflow has any nodes
     ///
     /// # Returns
     ///
@@ -238,11 +241,54 @@ impl Workflow {
     /// ```rust
     /// use colossus::shared::types::workflow::workflow::Workflow;
     ///
-    /// let workflow = Workflow::new("My Workflow");
+    /// let workflow = Workflow::new("Empty Workflow");
     /// assert!(!workflow.has_nodes());
     /// ```
     pub fn has_nodes(&self) -> bool {
         self.node_count() > 0
+    }
+
+    /// Gets a reference to the nodes if they exist
+    ///
+    /// # Returns
+    ///
+    /// Returns a reference to the nodes if they exist, `None` otherwise.
+    pub fn nodes(&self) -> Option<&[super::node::WorkflowNode]> {
+        self.nodes.as_deref()
+    }
+
+    /// Gets a mutable reference to the nodes if they exist
+    ///
+    /// # Returns
+    ///
+    /// Returns a mutable reference to the nodes if they exist, `None` otherwise.
+    pub fn nodes_mut(&mut self) -> Option<&mut Vec<super::node::WorkflowNode>> {
+        self.nodes.as_mut()
+    }
+
+    /// Adds a node to the workflow
+    ///
+    /// # Arguments
+    ///
+    /// * `node` - The node to add
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use colossus::shared::types::workflow::{workflow::Workflow, node::WorkflowNode};
+    /// use serde_yml::Value;
+    ///
+    /// let mut workflow = Workflow::new("My Workflow");
+    /// let node = WorkflowNode::new("test", "log", Some(Value::String("message".to_string())));
+    /// workflow.add_node(node);
+    /// assert_eq!(workflow.node_count(), 1);
+    /// ```
+    pub fn add_node(&mut self, node: super::node::WorkflowNode) {
+        if let Some(nodes) = &mut self.nodes {
+            nodes.push(node);
+        } else {
+            self.nodes = Some(vec![node]);
+        }
     }
 }
 
@@ -258,5 +304,161 @@ impl Default for Workflow {
             output: None,
             options: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shared::types::workflow::node::WorkflowNode;
+    use serde_yml::Value;
+
+    #[test]
+    fn test_workflow_new() {
+        let workflow = Workflow::new("Test Workflow");
+        assert_eq!(workflow.name, Some("Test Workflow".to_string()));
+        assert_eq!(workflow.id, None);
+        assert_eq!(workflow.version, None);
+    }
+
+    #[test]
+    fn test_workflow_with_id() {
+        let workflow = Workflow::new("Test Workflow").with_id("workflow-123");
+        assert_eq!(workflow.id, Some("workflow-123".to_string()));
+        assert_eq!(workflow.name, Some("Test Workflow".to_string()));
+    }
+
+    #[test]
+    fn test_workflow_with_version() {
+        let workflow = Workflow::new("Test Workflow").with_version("1.0.0");
+        assert_eq!(workflow.version, Some("1.0.0".to_string()));
+        assert_eq!(workflow.name, Some("Test Workflow".to_string()));
+    }
+
+    #[test]
+    fn test_workflow_name_or() {
+        let workflow = Workflow::new("Test Workflow");
+        assert_eq!(workflow.name_or("Default"), "Test Workflow");
+
+        let workflow = Workflow {
+            name: None,
+            ..Default::default()
+        };
+        assert_eq!(workflow.name_or("Default"), "Default");
+    }
+
+    #[test]
+    fn test_workflow_version_or() {
+        let workflow = Workflow::new("Test Workflow").with_version("1.0.0");
+        assert_eq!(workflow.version_or("0.1.0"), "1.0.0");
+
+        let workflow = Workflow {
+            version: None,
+            ..Default::default()
+        };
+        assert_eq!(workflow.version_or("0.1.0"), "0.1.0");
+    }
+
+    #[test]
+    fn test_workflow_node_count() {
+        let workflow = Workflow::new("Empty Workflow");
+        assert_eq!(workflow.node_count(), 0);
+
+        let mut workflow = Workflow::new("Workflow with Nodes");
+        let node1 = WorkflowNode::new("node1", "Log", None);
+        let node2 = WorkflowNode::new("node2", "Log", None);
+        workflow.add_node(node1);
+        workflow.add_node(node2);
+        assert_eq!(workflow.node_count(), 2);
+    }
+
+    #[test]
+    fn test_workflow_has_nodes() {
+        let workflow = Workflow::new("Empty Workflow");
+        assert!(!workflow.has_nodes());
+
+        let mut workflow = Workflow::new("Workflow with Nodes");
+        let node = WorkflowNode::new("node1", "Log", None);
+        workflow.add_node(node);
+        assert!(workflow.has_nodes());
+    }
+
+    #[test]
+    fn test_workflow_nodes() {
+        let workflow = Workflow::new("Empty Workflow");
+        assert!(workflow.nodes().is_none());
+
+        let mut workflow = Workflow::new("Workflow with Nodes");
+        let node = WorkflowNode::new("node1", "Log", None);
+        workflow.add_node(node);
+
+        let nodes = workflow.nodes().unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].id, "node1");
+    }
+
+    #[test]
+    fn test_workflow_nodes_mut() {
+        let mut workflow = Workflow::new("Workflow with Nodes");
+        let node = WorkflowNode::new("node1", "Log", None);
+        workflow.add_node(node);
+
+        let nodes_mut = workflow.nodes_mut().unwrap();
+        assert_eq!(nodes_mut.len(), 1);
+        nodes_mut[0].id = "updated_node".to_string();
+
+        let nodes = workflow.nodes().unwrap();
+        assert_eq!(nodes[0].id, "updated_node");
+    }
+
+    #[test]
+    fn test_workflow_add_node() {
+        let mut workflow = Workflow::new("Test Workflow");
+        assert_eq!(workflow.node_count(), 0);
+
+        let node1 = WorkflowNode::new("node1", "Log", Some(Value::String("message1".to_string())));
+        workflow.add_node(node1);
+        assert_eq!(workflow.node_count(), 1);
+
+        let node2 = WorkflowNode::new("node2", "Log", Some(Value::String("message2".to_string())));
+        workflow.add_node(node2);
+        assert_eq!(workflow.node_count(), 2);
+
+        let nodes = workflow.nodes().unwrap();
+        assert_eq!(nodes[0].id, "node1");
+        assert_eq!(nodes[1].id, "node2");
+    }
+
+    #[test]
+    fn test_workflow_default() {
+        let workflow = Workflow::default();
+        assert_eq!(workflow.id, None);
+        assert_eq!(workflow.name, None);
+        assert_eq!(workflow.version, None);
+        assert!(workflow.variables.is_none());
+        assert!(workflow.inputs.is_none());
+        assert!(workflow.nodes.is_none());
+        assert!(workflow.output.is_none());
+        assert!(workflow.options.is_none());
+    }
+
+    #[test]
+    fn test_workflow_builder_pattern() {
+        let workflow = Workflow::new("Test Workflow")
+            .with_id("workflow-123")
+            .with_version("1.0.0");
+
+        assert_eq!(workflow.name, Some("Test Workflow".to_string()));
+        assert_eq!(workflow.id, Some("workflow-123".to_string()));
+        assert_eq!(workflow.version, Some("1.0.0".to_string()));
+    }
+
+    #[test]
+    fn test_workflow_string_conversion() {
+        let workflow = Workflow::new("Test Workflow");
+        assert_eq!(workflow.name, Some("Test Workflow".to_string()));
+
+        let workflow = Workflow::new(String::from("Dynamic Workflow"));
+        assert_eq!(workflow.name, Some("Dynamic Workflow".to_string()));
     }
 }

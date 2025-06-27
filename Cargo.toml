@@ -1,15 +1,18 @@
 [package]
 name = "colossus"
-description = ""
+description = "A robust and ergonomic workflow execution engine for Rust"
 authors = ["Julien Andreu<julienandreu@me.com>"]
 repository = "https://github.com/julienandreu/colossus"
 license-file = "LICENSE"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.87.0"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.70.0"
+readme = "README.md"
+keywords = ["workflow", "engine", "yaml", "automation", "orchestration"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yml = "0.0.12"
 thiserror = "1.0"
@@ -17,6 +20,10 @@ clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
+regex = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
 
 [profile.release]
 panic = "abort"   # Strip expensive panic clean-up logic
@@ -24,3 +31,11 @@ codegen-units = 1 # Compile crates one after another so the compiler can optimiz
 lto = true        # Enables link to optimizations
 opt-level = 3
 strip = true      # Remove debug symbols
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.test]
+opt-level = 0
+debug = true
