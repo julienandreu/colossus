@@ -216,14 +216,14 @@ impl Heap {
     /// heap.insert("name", Some(Value::String("John".to_string())));
     /// heap.insert("age", Some(Value::Number(30.into())));
     ///
-    /// let input = Value::String("Hello {{name}}, you are {{age}} years old".to_string());
+    /// let input = Value::String("Hello ${{name}}, you are ${{age}} years old".to_string());
     /// let result = heap.parse(Some(input));
     /// assert_eq!(result, Some(Value::String("Hello John, you are 30 years old".to_string())));
     /// ```
     pub fn parse(&self, value: Option<Value>) -> Option<Value> {
         match value {
             Some(Value::String(s)) => {
-                let re = Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+                let re = Regex::new(r"\$\{\{([^}]+)\}\}").unwrap();
                 let mut result = s.clone();
 
                 for cap in re.captures_iter(&s) {
@@ -412,7 +412,7 @@ mod tests {
         heap.insert("name", Some(Value::String("John".to_string())));
         heap.insert("age", Some(Value::Number(30.into())));
 
-        let input = Value::String("Hello {{name}}, you are {{age}} years old".to_string());
+        let input = Value::String("Hello ${{name}}, you are ${{age}} years old".to_string());
         let result = heap.parse(Some(input));
 
         assert_eq!(
@@ -435,7 +435,7 @@ mod tests {
     #[test]
     fn test_heap_parse_unknown_variables() {
         let heap = Heap::new();
-        let input = Value::String("Hello {{unknown}}".to_string());
+        let input = Value::String("Hello ${{unknown}}".to_string());
         let result = heap.parse(Some(input.clone()));
 
         // Unknown variables should be left as-is

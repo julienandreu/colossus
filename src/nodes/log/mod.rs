@@ -43,17 +43,10 @@ impl LogNode {
 
 impl BaseNode for LogNode {
     fn execute(&self, _options: super::base::BaseNodeRunOptions) -> Result<Value, WorkflowError> {
-        match &self.input {
-            Some(value) => {
-                info!("Log node output: {:?}", value);
-                Ok(value.clone())
-            }
-            None => {
-                let error_msg = "Log node requires an input value".to_string();
-                info!("Log node error: {}", error_msg);
-                Err(WorkflowError::NodeExecutionFailed(error_msg))
-            }
-        }
+        let json = serde_json::to_string_pretty(&self.input)?;
+        info!("{}", json);
+
+        Ok(self.input.clone().unwrap_or(Value::Null))
     }
 }
 
@@ -139,14 +132,9 @@ mod tests {
         let options = BaseNodeRunOptions::new(&heap, "test".to_string());
 
         let result = node.execute(options);
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
-        match result.unwrap_err() {
-            crate::core::engine::WorkflowError::NodeExecutionFailed(msg) => {
-                assert!(msg.contains("Log node requires an input value"));
-            }
-            _ => panic!("Expected NodeExecutionFailed error"),
-        }
+        assert_eq!(result.unwrap(), Value::Null);
     }
 
     #[test]
